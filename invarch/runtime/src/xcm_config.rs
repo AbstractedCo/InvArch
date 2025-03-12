@@ -9,7 +9,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     parameter_types,
-    traits::{Everything, Nothing, TransformOrigin},
+    traits::{ContainsPair, Everything, Get, Nothing, TransformOrigin},
 };
 use frame_system::EnsureRoot;
 use orml_traits2::{
@@ -31,7 +31,7 @@ use sp_runtime::{
     traits::{Convert, MaybeEquivalence},
     Perbill,
 };
-use sp_std::sync::Arc;
+use sp_std::{marker::PhantomData, sync::Arc};
 use xcm::{v3::MultiLocation, v4::prelude::*};
 use xcm_builder::{
     AccountId32Aliases, AllowKnownQueryResponses, AllowSubscriptionsFrom,
@@ -367,8 +367,6 @@ impl Convert<AccountId, Location> for AccountIdToMultiLocation {
         .into()
     }
 }
-
-const ASSET_HUB_PARA_ID: u32 = 1000;
 
 parameter_type_with_key! {
     pub ParachainMinFee: |location: Location| -> Option<u128> {
