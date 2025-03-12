@@ -9,7 +9,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     parameter_types,
-    traits::{Everything, Nothing, TransformOrigin},
+    traits::{ContainsPair, Everything, Get, Nothing, TransformOrigin},
 };
 use frame_system::EnsureRoot;
 use orml_traits2::{
@@ -31,7 +31,7 @@ use sp_runtime::{
     traits::{Convert, MaybeEquivalence},
     Perbill,
 };
-use sp_std::sync::Arc;
+use sp_std::{marker::PhantomData, sync::Arc};
 use xcm::{v3::MultiLocation, v4::prelude::*};
 use xcm_builder::{
     AccountId32Aliases, AllowKnownQueryResponses, AllowSubscriptionsFrom,
@@ -43,6 +43,8 @@ use xcm_builder::{
 };
 use xcm_executor::XcmExecutor;
 
+const ASSET_HUB_PARA_ID: u32 = 1000;
+
 parameter_types! {
     pub const RelayLocation: Location = Location::parent();
     pub const RelayNetwork: NetworkId = NetworkId::Polkadot;
@@ -52,6 +54,8 @@ parameter_types! {
     pub const RelayAggregate: CustomAggregateMessageOrigin<AggregateMessageOrigin> = CustomAggregateMessageOrigin::Aggregate(AggregateMessageOrigin::Parent);
     pub SelfLocation: Location = Location::new(1, cumulus_primitives_core::Junctions::X1(Arc::new([Parachain(ParachainInfo::parachain_id().into());1])));
     pub LocalAssetLocation: Location = Location::new(0, Junctions::X1([Junction::GeneralIndex(VARCH_ASSET_ID.into())].into()));
+
+    pub AssetHubLocation: Location = (Parent, Parachain(ASSET_HUB_PARA_ID)).into();
 }
 
 /// Type for specifying how a `Location` can be converted into an `AccountId`.
@@ -170,6 +174,32 @@ impl FixedConversionRateProvider for MyFixedConversionRateProvider {
     }
 }
 
+pub struct IsDotFrom<Origin>(PhantomData<Origin>);
+impl<Origin> ContainsPair<Asset, Location> for IsDotFrom<Origin>
+where
+    Origin: Get<Location>,
+{
+    fn contains(asset: &Asset, origin: &Location) -> bool {
+        let loc = Origin::get();
+        &loc == origin
+            && matches!(
+                asset,
+                Asset {
+                    id: AssetId(Location {
+                        parents: 1,
+                        interior: Here
+                    }),
+                    fun: Fungible(_),
+                },
+            )
+    }
+}
+
+pub type Reserves = (
+    IsDotFrom<AssetHubLocation>,
+    MultiNativeAsset<AbsoluteReserveProvider>,
+);
+
 pub struct XcmConfig;
 impl xcm_executor::Config for XcmConfig {
     type RuntimeCall = RuntimeCall;
@@ -177,7 +207,7 @@ impl xcm_executor::Config for XcmConfig {
     // How to withdraw and deposit an asset.
     type AssetTransactor = NewLocalAssetTransactor;
     type OriginConverter = XcmOriginToTransactDispatchOrigin;
-    type IsReserve = MultiNativeAsset<AbsoluteReserveProvider>;
+    type IsReserve = Reserves;
     type IsTeleporter = (); // Teleporting is disabled.
     type Barrier = Barrier;
     type Weigher = FixedWeightBounds<BaseXcmWeight, RuntimeCall, MaxInstructions>;
@@ -337,8 +367,6 @@ impl Convert<AccountId, Location> for AccountIdToMultiLocation {
         .into()
     }
 }
-
-const ASSET_HUB_PARA_ID: u32 = 1000;
 
 parameter_type_with_key! {
     pub ParachainMinFee: |location: Location| -> Option<u128> {
